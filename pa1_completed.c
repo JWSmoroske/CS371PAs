@@ -76,10 +76,8 @@ void *client_thread_func(void *arg)
         perror("Epoll control failed");
         return;
     }
-    /* TODO:
-     * It sends messages to the server, waits for a response using epoll,
-     * and measures the round-trip time (RTT) of this request-response.
-     */
+
+    // send num_requests requests
     for (int i = 0; i < num_requests; i++)
     {
         if (gettimeofday(&start, NULL) == -1)
