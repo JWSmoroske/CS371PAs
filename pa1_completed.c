@@ -66,10 +66,11 @@ void *client_thread_func(void *arg)
     char send_buf[MESSAGE_SIZE] = "ABCDEFGHIJKMLNOP"; /* Send 16-Bytes message every time */
     char recv_buf[MESSAGE_SIZE];
     struct timeval start, end;
-
-    // Hint 1: register the "connected" client_thread's socket in the its epoll instance
-    // Hint 2: use gettimeofday() and "struct timeval start, end" to record timestamp, which can be used to calculated RTT.
-    if (epoll_ctl(data->epoll_fd, EPOLL_CTL_ADD, data->socket_fd, NULL) != 0)
+    
+    // register client socket
+    event.events = EPOLLIN | EPOLLOUT;
+    event.data.fd = data->socket_fd;
+    if (epoll_ctl(data->epoll_fd, EPOLL_CTL_ADD, data->socket_fd, &event) != 0)
     {
         // handle errors
         perror("Epoll control failed");
@@ -81,7 +82,11 @@ void *client_thread_func(void *arg)
      */
     for (int i = 0; i < num_requests; i++)
     {
-        gettimeofday(&start, NULL);
+        if (gettimeofday(&start, NULL) == -1)
+        {
+            perror("Get time of day failed");
+            break;
+        } 
         
         // send message
         if (send(data->socket_fd, send_buf, MESSAGE_SIZE, 0) == -1)
@@ -92,19 +97,37 @@ void *client_thread_func(void *arg)
         }
     
         // wait for epoll response
-
+        int n;
+        if ((n = epoll_wait(data->epoll_fd, &events, MAX_EVENTS, -1)) == -1)
+        {
+            perror("Epoll wait failed");
+            return;
+        }
+        for (int j = 0; j < n; j++)
+        {
+            // our socket is ready to recieve
+            if (events[j].data.fd == data->socket_fd)
+            {
+                // recieve response
+                if (recv(data->socket_fd, recv_buf, MESSAGE_SIZE, 0) == -1)
+                {
+                    perror("Receive failed");
+                }
+            }
+        }
 
         // measure RTT & update data
-        gettimeofday(&end, NULL);
-        data->total_rtt += end.tv_usec - start.tv_usec;
+        if (gettimeofday(&end, NULL) == -1)
+        {
+            perror("Get time of day failed");
+            break;
+        } 
+        data->total_rtt += ((end.tv_sec - start.tv_sec) * 1000000) + (end.tv_usec - start.tv_usec);
         data->total_messages++;
     }
-    /* TODO:
-     * The function exits after sending and receiving a predefined number of messages (num_requests).
-     * It calculates the request rate based on total messages and RTT
-     */
-    data->request_rate = (float)data->total_rtt / (1000.f * data->total_messages);
-
+    
+    // calculate request rate and return
+    data->request_rate = (data->total_rtt / 1000000.f) / data->total_messages;
     return NULL;
 }
 
