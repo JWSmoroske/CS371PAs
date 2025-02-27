@@ -10,3 +10,5 @@
 /.viminfo
 /.vscode-server
 /.wget-hsts
+/.gitignore
+/.gitconfig
