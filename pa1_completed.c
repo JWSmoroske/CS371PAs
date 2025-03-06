@@ -161,20 +161,127 @@ void run_client()
 
 void run_server()
 {
+    // set up variables
+    int server_fd, bind, listen, epoll_fd, new_socket;
+    struct epoll_event event, events[MAX_EVENTS]; // define epoll and events
+    struct sockaddr_in channel; // define domain socket 
+    socklen_t channel_len = sizeof(channel); // for new socket creation
 
-    /* TODO:
-     * Server creates listening socket and epoll instance.
-     * Server registers the listening socket to epoll
-     */
+    // create listening socket
+    server_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (server_fd == -1)
+    {
+        perror("Listening socket creation failed");
+        return;
+    }
+    
+    // define attributes of socket address struct
+    channel.sin_family = AF_INET;
+    channel.sin_port = htons(server_port);
+
+    // convert the server ip from text to binary
+    if (inet_pton(AF_NET, server_ip, &channel.sin_addr) <= 0)
+    {
+        perror("Conversion of ip-address failed");
+        close(server_fd);
+        return;
+    }
+
+    // assigns address for the socket
+    if (bind(server_fd, (struct sockaddr*)&channel, sizeof(channel)) == -1)
+    {
+        perror("Bind failed");
+        close(server_fd);
+        return;
+    }
+
+    // allows for accepting incoming requests
+    if (listen(server_fd, DEFAULT_CLIENT_THREADS) == -1)
+    {
+        perror("Listen failed");
+        close(server_fd);
+        return;
+    }
+
+    // create epoll instance
+    epoll_fd = epol_create1(0);
+    if (epoll_fd == -1)
+    {
+        perror("Epoll instance creation failed");
+        close(server_fd);
+        return;
+    }
+
+    // register listening socket to epoll
+    event.events = EPOLLIN; // allows read
+    event.data.fd = server_fd;
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_fd, &event) == -1)
+    {
+        perror("Epoll control failed");
+        close(server_fd);
+        close(epoll_fd);
+        return;
+    }
 
     /* Server's run-to-completion event loop */
     while (1)
     {
-        /* TODO:
-         * Server uses epoll to handle connection establishment with clients
-         * or receive the message from clients and echo the message back
-         */
+        // wait for events on the epoll
+         int event_count = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
+
+         if (event_count == -1)
+         {
+            perror("Epoll wait failed");
+            return;
+         }
+
+         for (int i = 0; i < event_count; i++)
+         {
+            // case where a new socket needs to be made for the client
+            if (events[i].data.fd == server_fd) 
+            {
+                new_socket = accept(server_fd, (struct sockaddr*)&channel, &channel_len); // creates a new connected socket 
+
+                if (new_socket == -1)
+                {
+                    perror("Accept failed");
+                    return;
+                }
+
+                // need to register the new socket to the epoll
+                event.events = EPOLLIN; // can read
+                event.data.fd = new_socket;
+                if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, new_socket, &event) == -1)
+                {
+                    perror("Adding new socket failed");
+                    close(new_socket);
+                    return;
+                }
+            }
+            
+            // two branches, if the established connection has nothing in it then close, if it does then echo the message back 
+            else 
+            {
+                char buffer[MESSAGE_SIZE]; // buffer for the message to be held in
+                int read_in = read(events[i].data.fd, buffer, MESSAGE_SIZE); // read in the message
+
+                if (read_in <= 0) // close the socket
+                {
+                    epoll_ctl(epoll_fd, EPOLL_CTL_DEL, events[i].data.fd, NULL);
+                    close(events[i].data.fd);
+                }
+
+                else // echo the message back
+                {
+                    write(events[i].data.fd, buffer, read_in); 
+                }
+            }
+         }
     }
+
+    close(server_fd);
+    close(epoll_fd);
+    return;
 }
 
 int main(int argc, char *argv[])
