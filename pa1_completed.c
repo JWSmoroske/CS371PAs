@@ -232,7 +232,7 @@ void run_server()
          if (event_count == -1)
          {
             perror("Epoll wait failed");
-            return;
+            break;
          }
 
          for (int i = 0; i < event_count; i++)
@@ -245,7 +245,7 @@ void run_server()
                 if (new_socket == -1)
                 {
                     perror("Accept failed");
-                    return;
+                    break;
                 }
 
                 // need to register the new socket to the epoll
@@ -255,7 +255,7 @@ void run_server()
                 {
                     perror("Adding new socket failed");
                     close(new_socket);
-                    return;
+                    break;
                 }
             }
             
