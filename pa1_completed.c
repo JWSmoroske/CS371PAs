@@ -148,7 +148,7 @@ void run_client()
      * and connect these sockets of client threads to the server
      */
     //set address structure
-    memset(&server_addr, 0, sizeof(server_addr);
+    memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(server_port);
     inet_pton(AF_INET, server_ip, &server_addr.sin_addr);
@@ -156,42 +156,41 @@ void run_client()
     //setup data for each thread
     for(int i =0; i<num_client_threads; i++) {
         //socket creation
-        int sockfd = socket(AF_INET, SOCK_STREAM, 0);
-        if (sockfd < 0) { //error handling
+        int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+        if (socket_fd < 0) { //error handling
             perror("Socket creation has failed");
             exit(EXIT_FAILURE);
         }
     // epoll instance
-        int epollfd = epoll_create1(0);
-        if(epollfd<0) {
+        int epoll_fd = epoll_create1(0);
+        if(epoll_fd<0) {
             perror("Epoll creation failed");
-            close(sockfd);
+            close(socket_fd);
             exit(EXIT_FAILURE);
         }
         //connect and check at the same time for failure
-        if(connect(sockfd,(struct sockaddr *)&server_addr, sizeof(server_addr))<0){
+        if(connect(socket_fd,(struct sockaddr *)&server_addr, sizeof(server_addr))<0){
             perror("Connection failed");
-            close(sockfd);
-            close(epollfd);
+            close(socket_fd);
+            close(epoll_fd);
             exit(EXIT_FAILURE);
         }
         struct epoll_event ev; //Socket epoll monitoring
         ev.events = EPOLLIN;
-        ev.data.fd = sockfd;
-        if(epoll_ctl(epollfd, EPOLL_CTL_ADD, sockfd, &ev)<0){
+        ev.data.fd = socket_fd;
+        if(epoll_ctl(epoll_fd, EPOLL_CTL_ADD, socket_fd, &ev)<0){
             perror("Epoll control failed");
-            close(sockfd);
-            close(epollfd);
+            close(socket_fd);
+            close(epoll_fd);
             exit(EXIT_FAILURE);
         }
         //store all the data here
-        thread_data[i].sockfd = sockfd;
-        thread_data[i].epollfd = epollfd;
+        thread_data[i].socket_fd = socket_fd;
+        thread_data[i].epoll_fd = epoll_fd;
         thread_data[i].thread_id = i;
         //initialize statistics variables
-        thread_data[i].rtt_sum = 0;
-        thread_data[i].messages_sent = 0;
-        thread_data[i].messages_received = 0;
+        thread_data[i].total_rtt = 0;
+        thread_data[i].total_messages = 0;
     }
     // Hint: use thread_data to save the created socket and epoll instance for each thread
     // You will pass the thread_data to pthread_create() as below
@@ -212,8 +211,8 @@ void run_client()
     int total_messages = 0;
     double total_request_rate = 0.0;
     for (int i = 0; i< num_client_threads; i++) {
-        total_rtt += thread_data[i].rtt_sum;
-        total_messages += thread_data[i].messages_received;
+        total_rtt += thread_data[i].total_rtt;
+        total_messages += thread_data[i].total_messages;
         total_request_rate += thread_data[i].request_rate;
     }
     printf("Average RTT: %lld us\n", total_rtt / total_messages);
