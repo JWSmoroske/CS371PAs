@@ -74,7 +74,7 @@ void *client_thread_func(void *arg)
     {
         // handle errors
         perror("Epoll control failed");
-        return;
+        return NULL;
     }
 
     // send num_requests requests
@@ -82,8 +82,9 @@ void *client_thread_func(void *arg)
     {
         if (gettimeofday(&start, NULL) == -1)
         {
+            // handle errors
             perror("Get time of day failed");
-            break;
+            return NULL;
         } 
         
         // send message
@@ -91,15 +92,16 @@ void *client_thread_func(void *arg)
         {
             // handle errors
             perror("Send failed");
-            break;
+            return NULL;
         }
     
         // wait for epoll response
         int n;
         if ((n = epoll_wait(data->epoll_fd, &events, MAX_EVENTS, -1)) == -1)
         {
+            // handle errors
             perror("Epoll wait failed");
-            return;
+            return NULL;
         }
         for (int j = 0; j < n; j++)
         {
@@ -109,7 +111,9 @@ void *client_thread_func(void *arg)
                 // recieve response
                 if (recv(data->socket_fd, recv_buf, MESSAGE_SIZE, 0) == -1)
                 {
+                    // handle errors
                     perror("Receive failed");
+                    return NULL;
                 }
             }
         }
@@ -118,7 +122,7 @@ void *client_thread_func(void *arg)
         if (gettimeofday(&end, NULL) == -1)
         {
             perror("Get time of day failed");
-            break;
+            return NULL;
         } 
         data->total_rtt += ((end.tv_sec - start.tv_sec) * 1000000) + (end.tv_usec - start.tv_usec);
         data->total_messages++;
@@ -162,7 +166,7 @@ void run_client()
 void run_server()
 {
     // set up variables
-    int server_fd, bind, listen, epoll_fd, new_socket;
+    int server_fd, epoll_fd, new_socket;
     struct epoll_event event, events[MAX_EVENTS]; // define epoll and events
     struct sockaddr_in channel; // define domain socket 
     socklen_t channel_len = sizeof(channel); // for new socket creation
@@ -180,7 +184,7 @@ void run_server()
     channel.sin_port = htons(server_port);
 
     // convert the server ip from text to binary
-    if (inet_pton(AF_NET, server_ip, &channel.sin_addr) <= 0)
+    if (inet_pton(AF_INET, server_ip, &channel.sin_addr) <= 0)
     {
         perror("Conversion of ip-address failed");
         close(server_fd);
@@ -204,7 +208,7 @@ void run_server()
     }
 
     // create epoll instance
-    epoll_fd = epol_create1(0);
+    epoll_fd = epoll_create1(0);
     if (epoll_fd == -1)
     {
         perror("Epoll instance creation failed");
@@ -227,7 +231,7 @@ void run_server()
     while (1)
     {
         // wait for events on the epoll
-         int event_count = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
+         int event_count = epoll_wait(epoll_fd, &events, MAX_EVENTS, -1);
 
          if (event_count == -1)
          {
