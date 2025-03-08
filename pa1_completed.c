@@ -119,6 +119,8 @@ void *client_thread_func(void *arg)
             close(data->epoll_fd);
             return NULL;
         }
+
+        // find our socket among epoll_events
         for (int j = 0; j < n; j++)
         {
             // our socket is ready to recieve
@@ -165,62 +167,67 @@ void run_client()
     client_thread_data_t thread_data[num_client_threads];
     struct sockaddr_in server_addr;
 
-    /* TODO:
-     * Create sockets and epoll instances for client threads
-     * and connect these sockets of client threads to the server
-     */
-    //set address structure
+    // set address structure
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(server_port);
     inet_pton(AF_INET, server_ip, &server_addr.sin_addr);
 
-    //setup data for each thread
-    for(int i =0; i<num_client_threads; i++) {
-        //socket creation
+    // setup data for each thread
+    for (int i = 0; i < num_client_threads; i++) 
+    {
+        // socket creation
         int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
-        if (socket_fd < 0) { //error handling
+        if (socket_fd < 0) 
+        { 
             perror("Socket creation has failed");
             continue;
         }
+
         // epoll instance
         int epoll_fd = epoll_create1(0);
-        if(epoll_fd < 0) {
+        if (epoll_fd < 0) 
+        {
             perror("Epoll creation failed");
             close(socket_fd);
             continue;
         }
-        //connect and check at the same time for failure
-        if(connect(socket_fd,(struct sockaddr *)&server_addr, sizeof(server_addr))<0){
+
+        // connect and check at the same time for failure
+        if (connect(socket_fd,(struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
+        {
             perror("Connection failed");
             close(socket_fd);
             close(epoll_fd);
             continue;
         }
-        //store all the data here
+
+        // store thread data here
         thread_data[i].socket_fd = socket_fd;
         thread_data[i].epoll_fd = epoll_fd;
-        //initialize statistics variables
+        // initialize statistics variables
         thread_data[i].total_rtt = 0;
         thread_data[i].total_messages = 0;
     }
-    // Hint: use thread_data to save the created socket and epoll instance for each thread
-    // You will pass the thread_data to pthread_create() as below
+
+    // create threads
     for (int i = 0; i < num_client_threads; i++)
     {
         pthread_create(&threads[i], NULL, client_thread_func, &thread_data[i]);
     }
 
-    //waiting part
-    for(int i = 0; i<num_client_threads;i++){
+    // wait for threads to complete
+    for (int i = 0; i < num_client_threads; i++)
+    {
         pthread_join(threads[i],NULL);
     }
 
-    //aggregate metrics
+    // aggregate metrics
     long long total_rtt = 0;
     int total_messages = 0;
     double total_request_rate = 0.0;
-    for (int i = 0; i< num_client_threads; i++) {
+    for (int i = 0; i < num_client_threads; i++) 
+    {
         total_rtt += thread_data[i].total_rtt;
         total_messages += thread_data[i].total_messages;
         total_request_rate += thread_data[i].request_rate;
@@ -257,14 +264,7 @@ void run_server()
         return;
     }
 
-    // assigns address for the socket (use setsockopt to ensure reusable addresses)
-    int opt = 1;
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) == -1)
-    {
-        perror("Setsockopt failed");
-        close(server_fd);
-        return;
-    }
+    // assigns address for the socket
     if (bind(server_fd, (struct sockaddr*)&channel, sizeof(channel)) == -1)
     {
         perror("Bind failed");
@@ -356,6 +356,7 @@ void run_server()
          }
     }
 
+    // close fds and return
     close(server_fd);
     close(epoll_fd);
     return;
