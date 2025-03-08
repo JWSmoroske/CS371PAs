@@ -74,6 +74,8 @@ void *client_thread_func(void *arg)
     {
         // handle errors
         perror("Epoll control failed");
+        close(data->socket_fd);
+        close(data->epoll_fd);
         return NULL;
     }
 
@@ -84,6 +86,8 @@ void *client_thread_func(void *arg)
         {
             // handle errors
             perror("Get time of day failed");
+            close(data->socket_fd);
+            close(data->epoll_fd);
             return NULL;
         } 
         
@@ -92,15 +96,27 @@ void *client_thread_func(void *arg)
         {
             // handle errors
             perror("Send failed");
+            close(data->socket_fd);
+            close(data->epoll_fd);
             return NULL;
         }
     
         // wait for epoll response
-        int n;
-        if ((n = epoll_wait(data->epoll_fd, &events, MAX_EVENTS, -1)) == -1)
+        int n = epoll_wait(data->epoll_fd, events, MAX_EVENTS, 5000);
+        if (n == -1)
         {
             // handle errors
             perror("Epoll wait failed");
+            close(data->socket_fd);
+            close(data->epoll_fd);
+            return NULL;
+        }
+        else if (n == 0)
+        {
+            // timeout
+            fprintf(stderr, "Epoll wait timeout");
+            close(data->socket_fd);
+            close(data->epoll_fd);
             return NULL;
         }
         for (int j = 0; j < n; j++)
@@ -113,6 +129,8 @@ void *client_thread_func(void *arg)
                 {
                     // handle errors
                     perror("Receive failed");
+                    close(data->socket_fd);
+                    close(data->epoll_fd);
                     return NULL;
                 }
             }
@@ -122,6 +140,8 @@ void *client_thread_func(void *arg)
         if (gettimeofday(&end, NULL) == -1)
         {
             perror("Get time of day failed");
+            close(data->socket_fd);
+            close(data->epoll_fd);
             return NULL;
         } 
         data->total_rtt += ((end.tv_sec - start.tv_sec) * 1000000) + (end.tv_usec - start.tv_usec);
@@ -129,7 +149,9 @@ void *client_thread_func(void *arg)
     }
     
     // calculate request rate and return
-    data->request_rate = (data->total_rtt / 1000000.f) / data->total_messages;
+    close(data->socket_fd);
+    close(data->epoll_fd);
+    data->request_rate = data->total_messages / (data->total_rtt / 1000000.f);
     return NULL;
 }
 
@@ -159,35 +181,25 @@ void run_client()
         int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
         if (socket_fd < 0) { //error handling
             perror("Socket creation has failed");
-            exit(EXIT_FAILURE);
+            continue;
         }
-    // epoll instance
+        // epoll instance
         int epoll_fd = epoll_create1(0);
-        if(epoll_fd<0) {
+        if(epoll_fd < 0) {
             perror("Epoll creation failed");
             close(socket_fd);
-            exit(EXIT_FAILURE);
+            continue;
         }
         //connect and check at the same time for failure
         if(connect(socket_fd,(struct sockaddr *)&server_addr, sizeof(server_addr))<0){
             perror("Connection failed");
             close(socket_fd);
             close(epoll_fd);
-            exit(EXIT_FAILURE);
-        }
-        struct epoll_event ev; //Socket epoll monitoring
-        ev.events = EPOLLIN;
-        ev.data.fd = socket_fd;
-        if(epoll_ctl(epoll_fd, EPOLL_CTL_ADD, socket_fd, &ev)<0){
-            perror("Epoll control failed");
-            close(socket_fd);
-            close(epoll_fd);
-            exit(EXIT_FAILURE);
+            continue;
         }
         //store all the data here
         thread_data[i].socket_fd = socket_fd;
         thread_data[i].epoll_fd = epoll_fd;
-        thread_data[i].thread_id = i;
         //initialize statistics variables
         thread_data[i].total_rtt = 0;
         thread_data[i].total_messages = 0;
@@ -199,13 +211,11 @@ void run_client()
         pthread_create(&threads[i], NULL, client_thread_func, &thread_data[i]);
     }
 
-    /* TODO:
-     * Wait for client threads to complete and aggregate metrics of all client threads
-     */
-//waiting part
+    //waiting part
     for(int i = 0; i<num_client_threads;i++){
         pthread_join(threads[i],NULL);
     }
+
     //aggregate metrics
     long long total_rtt = 0;
     int total_messages = 0;
@@ -247,7 +257,14 @@ void run_server()
         return;
     }
 
-    // assigns address for the socket
+    // assigns address for the socket (use setsockopt to ensure reusable addresses)
+    int opt = 1;
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) == -1)
+    {
+        perror("Setsockopt failed");
+        close(server_fd);
+        return;
+    }
     if (bind(server_fd, (struct sockaddr*)&channel, sizeof(channel)) == -1)
     {
         perror("Bind failed");
@@ -287,7 +304,7 @@ void run_server()
     while (1)
     {
         // wait for events on the epoll
-         int event_count = epoll_wait(epoll_fd, &events, MAX_EVENTS, -1);
+         int event_count = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
 
          if (event_count == -1)
          {
@@ -305,7 +322,7 @@ void run_server()
                 if (new_socket == -1)
                 {
                     perror("Accept failed");
-                    break;
+                    continue;
                 }
 
                 // need to register the new socket to the epoll
