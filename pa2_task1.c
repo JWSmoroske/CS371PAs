@@ -92,6 +92,7 @@ void *client_thread_func(void *arg)
         if (gettimeofday(&start, NULL) == -1)
         {
             // error - skip this packet
+            perror("Gettimeofday failure");
             continue;
         } 
         
@@ -99,6 +100,7 @@ void *client_thread_func(void *arg)
         if (send(data->socket_fd, send_buf, MESSAGE_SIZE, 0) == -1)
         {
             // error - skip this packet
+            perror("Send failure");
             continue;
         }
         else
@@ -111,6 +113,7 @@ void *client_thread_func(void *arg)
         if (n == -1)
         {
             // error - can't receive
+            perror("Epoll wait failure");
             continue;
         }
         else if (n == 0)
@@ -129,6 +132,7 @@ void *client_thread_func(void *arg)
                 if (recv(data->socket_fd, recv_buf, MESSAGE_SIZE, 0) == -1)
                 {
                     // error when receiving
+                    perror("Recv failure");
                 }
                 else
                 {
@@ -141,6 +145,7 @@ void *client_thread_func(void *arg)
         if (gettimeofday(&end, NULL) == -1)
         {
             // error - can't update metrics
+            perror("Gettimeofday failure");
         } 
         else
         {
