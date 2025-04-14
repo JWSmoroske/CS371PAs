@@ -177,7 +177,7 @@ void run_client()
     for (int i = 0; i < num_client_threads; i++) 
     {
         // socket creation
-        int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+        int socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
         if (socket_fd < 0) 
         { 
             perror("Socket creation has failed");
@@ -192,15 +192,19 @@ void run_client()
             close(socket_fd);
             continue;
         }
-
-        // connect and check at the same time for failure
-        if (connect(socket_fd,(struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
-        {
-            perror("Connection failed");
+        //epoll event will be used to monitor the socket
+        struct epoll_event ev;
+        ev.events = EPOLLIN;
+        ev.data.fd = socket_fd;
+        if(epoll_ctl(epoll_fd,EPOLL_CTL_ADD,socket_fd,&ev)<0){
+            perror("Epoll control failed");
             close(socket_fd);
             close(epoll_fd);
             continue;
         }
+       
+        memcpy(&thread_data[i].server_addr,&server_addr,sizeof(server_addr));
+
 
         // store thread data here
         thread_data[i].socket_fd = socket_fd;
@@ -226,16 +230,19 @@ void run_client()
     long long total_rtt = 0;
     int total_messages = 0;
     double total_request_rate = 0.0;
+    long long total_packets_lost = 0
+
     for (int i = 0; i < num_client_threads; i++) 
     {
         total_rtt += thread_data[i].total_rtt;
         total_messages += thread_data[i].total_messages;
         total_request_rate += thread_data[i].request_rate;
+        total_packets_lost += thread_data[i].packets_lost;
     }
     printf("Average RTT: %lld us\n", total_rtt / total_messages);
     printf("Total Request Rate: %f messages/s\n", total_request_rate);
+    printf("Total Packet Loss: %f percent",total_packets_lost);
 }
-
 void run_server()
 {
     // set up variables
