@@ -196,14 +196,14 @@ void run_client()
         struct epoll_event ev;
         ev.events = EPOLLIN;
         ev.data.fd = socket_fd;
-        if(epoll_ctl(epoll_fd,EPOLL_CTL_ADD,socket_fd,&ev)<0){
-            perror("Epoll control failed");
-            close(socket_fd);
-            close(epoll_fd);
-            continue;
-        }
-       
-        memcpy(&thread_data[i].server_addr,&server_addr,sizeof(server_addr));
+        if (connect(socket_fd,(struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
+{
+    perror("Connection failed");
+    close(socket_fd);
+    close(epoll_fd);
+    continue;
+}
+    
 
 
         // store thread data here
@@ -212,6 +212,7 @@ void run_client()
         // initialize statistics variables
         thread_data[i].total_rtt = 0;
         thread_data[i].total_messages = 0;
+        thread_data[i].packets_lost = 0;
     }
 
     // create threads
