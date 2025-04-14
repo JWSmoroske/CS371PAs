@@ -244,8 +244,8 @@ void run_server()
     struct sockaddr_in channel; // define domain socket 
     socklen_t channel_len = sizeof(channel); // for new socket creation
 
-    // create listening socket
-    server_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    // create socket for UDP
+    server_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP); 
     if (server_fd == -1)
     {
         perror("Listening socket creation failed");
@@ -264,18 +264,10 @@ void run_server()
         return;
     }
 
-    // assigns address for the socket
+    // assigns address for the socket, no need for listen on UDP
     if (bind(server_fd, (struct sockaddr*)&channel, sizeof(channel)) == -1)
     {
         perror("Bind failed");
-        close(server_fd);
-        return;
-    }
-
-    // allows for accepting incoming requests
-    if (listen(server_fd, DEFAULT_CLIENT_THREADS) == -1)
-    {
-        perror("Listen failed");
         close(server_fd);
         return;
     }
@@ -314,46 +306,31 @@ void run_server()
 
          for (int i = 0; i < event_count; i++)
          {
-            // case where a new socket needs to be made for the client
             if (events[i].data.fd == server_fd) 
             {
-                new_socket = accept(server_fd, (struct sockaddr*)&channel, &channel_len); // creates a new connected socket 
+                struct sockaddr_in client; // one socket created for the client for UDP
+                socklen_t client_len = sizeof(client); // for the client socket
+                char buffer[MESSAGE_SIZE]; // buffer for the message to be held in
 
-                if (new_socket == -1)
+                // receive message into the buffer
+                ssize_t rec = recvfrom(server_fd, buffer, MESSAGE_SIZE, 0, (struct sockaddr*)&client, client_len);
+
+                if (rec == -1)
                 {
-                    perror("Accept failed");
+                    perror("Receive message failed");
                     continue;
                 }
 
-                // need to register the new socket to the epoll
-                event.events = EPOLLIN; // can read
-                event.data.fd = new_socket;
-                if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, new_socket, &event) == -1)
+                // echo that message from the buffer
+                ssize_t send = sendto(server_fd, buffer, rec, 0, (struct sockaddr*)&client, client_len);
+
+                if (send == -1)
                 {
-                    perror("Adding new socket failed");
-                    close(new_socket);
-                    break;
+                    perror("Send messsage failed");
+                    continue;
                 }
             }
-            
-            // two branches, if the established connection has nothing in it then close, if it does then echo the message back 
-            else 
-            {
-                char buffer[MESSAGE_SIZE]; // buffer for the message to be held in
-                int read_in = read(events[i].data.fd, buffer, MESSAGE_SIZE); // read in the message
-
-                if (read_in <= 0) // close the socket
-                {
-                    epoll_ctl(epoll_fd, EPOLL_CTL_DEL, events[i].data.fd, NULL);
-                    close(events[i].data.fd);
-                }
-
-                else // echo the message back
-                {
-                    write(events[i].data.fd, buffer, read_in); 
-                }
-            }
-         }
+        }
     }
 
     // close fds and return
