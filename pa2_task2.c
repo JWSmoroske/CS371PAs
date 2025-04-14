@@ -62,6 +62,9 @@ typedef struct
     int packets_lost;    /* Total number of packets lost by this thread. */
 } client_thread_data_t;
 
+/*
+ * This structure holds data and metadata transferred between the client and server
+ */
 typedef struct {
     int type;                   /* 0 = data, 1 = ack, 2 = nack */
     int thread_id;              /* id of client thread */
