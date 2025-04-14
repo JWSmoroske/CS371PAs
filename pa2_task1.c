@@ -56,7 +56,7 @@ typedef struct
     long long total_rtt; /* Accumulated Round-Trip Time (RTT) for all messages sent and received (in microseconds). */
     long total_messages; /* Total number of messages sent and received. */
     float request_rate;  /* Computed request rate (requests per second) based on RTT and total messages. */
-    int packets_lost;    /* Total number of packets lost by this thread. */
+    long long packets_lost;    /* Total number of packets lost by this thread. */
 } client_thread_data_t;
 
 /*
@@ -83,8 +83,8 @@ void *client_thread_func(void *arg)
     }
 
     // packet loss metrics
-    int packets_sent = 0;
-    int packets_received = 0;
+    long long packets_sent = 0;
+    long long packets_received = 0;
 
     // send num_requests requests
     for (int i = 0; i < num_requests; i++)
