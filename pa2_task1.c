@@ -39,7 +39,7 @@ Please specify the group members here
 #define MESSAGE_SIZE 16
 #define DEFAULT_CLIENT_THREADS 4
 
-#define THREAD_TIMEOUT 5000
+#define THREAD_TIMEOUT -1
 
 char *server_ip = "127.0.0.1";
 int server_port = 12345;
