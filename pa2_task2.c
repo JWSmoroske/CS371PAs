@@ -40,6 +40,9 @@ Please specify the group members here
 #define DEFAULT_CLIENT_THREADS 4
 
 #define THREAD_TIMEOUT 5000
+#define MAX_SEQ 1
+
+typedef unsigned int seq_nr;
 
 char *server_ip = "127.0.0.1";
 int server_port = 12345;
@@ -58,6 +61,14 @@ typedef struct
     float request_rate;  /* Computed request rate (requests per second) based on RTT and total messages. */
     int packets_lost;    /* Total number of packets lost by this thread. */
 } client_thread_data_t;
+
+typedef struct {
+    int type;                   /* 0 = data, 1 = ack, 2 = nack */
+    int thread_id;              /* id of client thread */
+    seq_nr seq;                 /* sequence number */
+    seq_nr ack;                 /* acknowledgement number */
+    char data[MESSAGE_SIZE];    /* data */
+} frame;
 
 /*
  * This function runs in a separate client thread to handle communication with the server
@@ -82,9 +93,15 @@ void *client_thread_func(void *arg)
         return NULL;
     }
 
+    // main frame
+    frame f;
+
     // packet loss metrics
     int packets_sent = 0;
     int packets_received = 0;
+
+    // sequence numbers for SN/ARQ method
+    seq_nr next_seqnr_to_send = 0;
 
     // send num_requests requests
     for (int i = 0; i < num_requests; i++)
@@ -96,8 +113,14 @@ void *client_thread_func(void *arg)
             continue;
         } 
         
-        // send message
-        if (send(data->socket_fd, send_buf, MESSAGE_SIZE, 0) == -1)
+        // create frame to send
+        f.type = 0;
+        // f.thread_id = data->thread_id;
+        f.seq = next_seqnr_to_send;
+        strcpy(f.data, send_buf);
+
+        // send frame to server
+        if (send(data->socket_fd, &f, sizeof(f), 0) == -1)
         {
             // error - skip this packet
             perror("Send failure");
@@ -105,10 +128,11 @@ void *client_thread_func(void *arg)
         }
         else
         {
+            // packet successfully sent
             packets_sent++;
         }
     
-        // wait for epoll response
+        // enter timeout period
         int n = epoll_wait(data->epoll_fd, events, MAX_EVENTS, THREAD_TIMEOUT);
         if (n == -1)
         {
@@ -118,7 +142,7 @@ void *client_thread_func(void *arg)
         }
         else if (n == 0)
         {
-            // timeout - skip this packet
+            // timeout = retransmit (dont update seqnr)
             continue;
         }
 
@@ -129,14 +153,24 @@ void *client_thread_func(void *arg)
             if (events[j].data.fd == data->socket_fd)
             {
                 // receive response
-                if (recv(data->socket_fd, recv_buf, MESSAGE_SIZE, 0) == -1)
+                if (recv(data->socket_fd, &f, sizeof(f), 0) == -1)
                 {
                     // error when receiving
                     perror("Recv failure");
                 }
                 else
                 {
-                    packets_received++;
+                    // ack received, verify that it is correct
+                    if (f.ack == next_seqnr_to_send)
+                    {
+                        // increment seqnr
+                        if (next_seqnr_to_send < MAX_SEQ)
+                            next_seqnr_to_send++;
+                        else
+                            next_seqnr_to_send = 0;
+
+                        packets_received++;
+                    }
                 }
             }
         }
