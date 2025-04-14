@@ -39,6 +39,8 @@ Please specify the group members here
 #define MESSAGE_SIZE 16
 #define DEFAULT_CLIENT_THREADS 4
 
+#define THREAD_TIMEOUT 5000
+
 char *server_ip = "127.0.0.1";
 int server_port = 12345;
 int num_client_threads = DEFAULT_CLIENT_THREADS;
@@ -54,6 +56,7 @@ typedef struct
     long long total_rtt; /* Accumulated Round-Trip Time (RTT) for all messages sent and received (in microseconds). */
     long total_messages; /* Total number of messages sent and received. */
     float request_rate;  /* Computed request rate (requests per second) based on RTT and total messages. */
+    int packets_lost;    /* Total number of packets lost by this thread. */
 } client_thread_data_t;
 
 /*
@@ -79,61 +82,57 @@ void *client_thread_func(void *arg)
         return NULL;
     }
 
+    // packet loss metrics
+    int packets_sent = 0;
+    int packets_received = 0;
+
     // send num_requests requests
     for (int i = 0; i < num_requests; i++)
     {
         if (gettimeofday(&start, NULL) == -1)
         {
-            // handle errors
-            perror("Get time of day failed");
-            close(data->socket_fd);
-            close(data->epoll_fd);
-            return NULL;
+            // error - skip this packet
+            continue;
         } 
         
         // send message
         if (send(data->socket_fd, send_buf, MESSAGE_SIZE, 0) == -1)
         {
-            // handle errors
-            perror("Send failed");
-            close(data->socket_fd);
-            close(data->epoll_fd);
-            return NULL;
+            // error - skip this packet
+            continue;
+        }
+        else
+        {
+            packets_sent++;
         }
     
         // wait for epoll response
-        int n = epoll_wait(data->epoll_fd, events, MAX_EVENTS, 5000);
+        int n = epoll_wait(data->epoll_fd, events, MAX_EVENTS, THREAD_TIMEOUT);
         if (n == -1)
         {
-            // handle errors
-            perror("Epoll wait failed");
-            close(data->socket_fd);
-            close(data->epoll_fd);
-            return NULL;
+            // error - can't receive
+            continue;
         }
         else if (n == 0)
         {
-            // timeout
-            fprintf(stderr, "Epoll wait timeout");
-            close(data->socket_fd);
-            close(data->epoll_fd);
-            return NULL;
+            // timeout - skip this packet
+            continue;
         }
 
         // find our socket among epoll_events
         for (int j = 0; j < n; j++)
         {
-            // our socket is ready to recieve
+            // our socket is ready to receive
             if (events[j].data.fd == data->socket_fd)
             {
-                // recieve response
+                // receive response
                 if (recv(data->socket_fd, recv_buf, MESSAGE_SIZE, 0) == -1)
                 {
-                    // handle errors
-                    perror("Receive failed");
-                    close(data->socket_fd);
-                    close(data->epoll_fd);
-                    return NULL;
+                    // error when receiving
+                }
+                else
+                {
+                    packets_received++;
                 }
             }
         }
@@ -141,19 +140,20 @@ void *client_thread_func(void *arg)
         // measure RTT & update data
         if (gettimeofday(&end, NULL) == -1)
         {
-            perror("Get time of day failed");
-            close(data->socket_fd);
-            close(data->epoll_fd);
-            return NULL;
+            // error - can't update metrics
         } 
-        data->total_rtt += ((end.tv_sec - start.tv_sec) * 1000000) + (end.tv_usec - start.tv_usec);
+        else
+        {
+            data->total_rtt += ((end.tv_sec - start.tv_sec) * 1000000) + (end.tv_usec - start.tv_usec);
+        }
         data->total_messages++;
     }
     
-    // calculate request rate and return
+    // calculate metrics and return
     close(data->socket_fd);
     close(data->epoll_fd);
     data->request_rate = data->total_messages / (data->total_rtt / 1000000.f);
+    data->packets_lost = packets_sent - packets_received;
     return NULL;
 }
 
