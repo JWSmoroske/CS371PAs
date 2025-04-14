@@ -116,11 +116,6 @@ void *client_thread_func(void *arg)
             perror("Epoll wait failure");
             continue;
         }
-        else if (n == 0)
-        {
-            // timeout - skip this packet
-            continue;
-        }
 
         // find our socket among epoll_events
         for (int j = 0; j < n; j++)
