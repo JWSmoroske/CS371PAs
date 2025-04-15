@@ -41,7 +41,7 @@ Please specify the group members here
 
 #define THREAD_TIMEOUT 1000
 #define MAX_SEQ 1
-#define MAX_THREADS 100
+#define MAX_THREADS 500
 
 typedef unsigned int seq_nr;
 
@@ -106,7 +106,7 @@ void *client_thread_func(void *arg)
 
     // packet loss metrics
     int packets_sent = 0;
-    int packets_received = 0;
+    int acks_received = 0;
 
     // sequence numbers for SN/ARQ method
     seq_nr next_seqnr_to_send = 0;
@@ -150,7 +150,8 @@ void *client_thread_func(void *arg)
         }
         else if (n == 0)
         {
-            // timeout = retransmit (dont update seqnr)
+            // timeout = retransmit (dont update seqnr, same packet again)
+            packets_sent--;
             continue;
         }
 
@@ -177,7 +178,7 @@ void *client_thread_func(void *arg)
                         else
                             next_seqnr_to_send = 0;
 
-                        packets_received++;
+                        acks_received++;
                     }
                 }
             }
@@ -200,7 +201,7 @@ void *client_thread_func(void *arg)
     close(data->socket_fd);
     close(data->epoll_fd);
     data->request_rate = data->total_messages / (data->total_rtt / 1000000.f);
-    data->packets_lost = packets_sent - packets_received;
+    data->packets_lost = packets_sent - acks_received;
     return NULL;
 }
 
