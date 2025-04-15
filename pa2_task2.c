@@ -173,10 +173,13 @@ void *client_thread_func(void *arg)
                     {
                         // increment seqnr
                         if (next_seqnr_to_send < MAX_SEQ)
+                        {
                             next_seqnr_to_send++;
+                        }
                         else
+                        {
                             next_seqnr_to_send = 0;
-
+                        }
                         packets_received++;
                     }
                 }
@@ -276,8 +279,10 @@ void run_client()
         total_request_rate += thread_data[i].request_rate;
         total_packets_lost += thread_data[i].packets_lost;
     }
+    
     printf("Average RTT: %lld us\n", total_rtt / total_messages);
     printf("Total Request Rate: %f messages/s\n", total_request_rate);
+    
     if (total_packets_lost == 0)
     {
         printf("No packets lost\n");
@@ -392,10 +397,15 @@ void run_server()
                 {
                     // increment sequence number 
                     if (frame_expected[client_thread_id] < MAX_SEQ)
+                    {
                         frame_expected[client_thread_id] = frame_expected[client_thread_id] + 1;
+                    }
                     else
+                    {
                         frame_expected[client_thread_id] = 0;
-                    ack_packet.type = 1; // ack, since the expected sq num lined up
+                    }
+                    
+                    ack_packet.type = 1; // ack, since the expected sq num lined up     
                 }
                 
                 else
