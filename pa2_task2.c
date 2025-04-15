@@ -283,7 +283,7 @@ void run_client()
     
     printf("Average RTT: %lld us\n", total_rtt / total_messages);
     printf("Total Request Rate: %f messages/s\n", total_request_rate);
-    
+    // final packets comparison
     if (total_packets_lost == 0)
     {
         printf("No packets lost\n");
