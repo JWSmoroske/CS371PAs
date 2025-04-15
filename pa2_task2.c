@@ -390,7 +390,6 @@ void run_server()
                 {
                     perror("Acknowledgement failed to transmit");
                     continue;
-
                 }
             }
         }
