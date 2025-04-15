@@ -39,7 +39,7 @@ Please specify the group members here
 #define MESSAGE_SIZE 16
 #define DEFAULT_CLIENT_THREADS 4
 
-#define THREAD_TIMEOUT -1
+#define THREAD_TIMEOUT 1000
 
 char *server_ip = "127.0.0.1";
 int server_port = 12345;
@@ -53,6 +53,7 @@ typedef struct
 {
     int epoll_fd;        /* File descriptor for the epoll instance, used for monitoring events on the socket. */
     int socket_fd;       /* File descriptor for the client socket connected to the server. */
+    struct sockaddr_in server_addr; /* Server address struct */
     long long total_rtt; /* Accumulated Round-Trip Time (RTT) for all messages sent and received (in microseconds). */
     long total_messages; /* Total number of messages sent and received. */
     float request_rate;  /* Computed request rate (requests per second) based on RTT and total messages. */
@@ -69,9 +70,11 @@ void *client_thread_func(void *arg)
     char send_buf[MESSAGE_SIZE] = "ABCDEFGHIJKMLNOP"; /* Send 16-Bytes message every time */
     char recv_buf[MESSAGE_SIZE];
     struct timeval start, end;
+
+    socklen_t server_addr_len = sizeof(data->server_addr);
     
     // register client socket
-    event.events = EPOLLIN | EPOLLOUT;
+    event.events = EPOLLIN;
     event.data.fd = data->socket_fd;
     if (epoll_ctl(data->epoll_fd, EPOLL_CTL_ADD, data->socket_fd, &event) != 0)
     {
@@ -97,7 +100,7 @@ void *client_thread_func(void *arg)
         } 
         
         // send message
-        if (send(data->socket_fd, send_buf, MESSAGE_SIZE, 0) == -1)
+        if (sendto(data->socket_fd, send_buf, MESSAGE_SIZE, 0, (struct sockaddr*)&data->server_addr, server_addr_len) == -1)
         {
             // error - skip this packet
             perror("Send failure");
@@ -116,6 +119,11 @@ void *client_thread_func(void *arg)
             perror("Epoll wait failure");
             continue;
         }
+        else if (n == 0)
+        {
+            // timeout 
+            continue;
+        }
 
         // find our socket among epoll_events
         for (int j = 0; j < n; j++)
@@ -124,7 +132,7 @@ void *client_thread_func(void *arg)
             if (events[j].data.fd == data->socket_fd)
             {
                 // receive response
-                if (recv(data->socket_fd, recv_buf, MESSAGE_SIZE, 0) == -1)
+                if (recvfrom(data->socket_fd, recv_buf, MESSAGE_SIZE, 0, (struct sockaddr*) &data->server_addr, &server_addr_len) == -1)
                 {
                     // error when receiving
                     perror("Recv failure");
@@ -192,23 +200,11 @@ void run_client()
             close(socket_fd);
             continue;
         }
-        //epoll event will be used to monitor the socket
-        struct epoll_event ev;
-        ev.events = EPOLLIN;
-        ev.data.fd = socket_fd;
-        if (connect(socket_fd,(struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
-{
-    perror("Connection failed");
-    close(socket_fd);
-    close(epoll_fd);
-    continue;
-}
-    
-
 
         // store thread data here
         thread_data[i].socket_fd = socket_fd;
         thread_data[i].epoll_fd = epoll_fd;
+        thread_data[i].server_addr = server_addr;
         // initialize statistics variables
         thread_data[i].total_rtt = 0;
         thread_data[i].total_messages = 0;
@@ -231,7 +227,7 @@ void run_client()
     long long total_rtt = 0;
     int total_messages = 0;
     double total_request_rate = 0.0;
-    long long total_packets_lost = 0
+    long long total_packets_lost = 0;
 
     for (int i = 0; i < num_client_threads; i++) 
     {
@@ -240,9 +236,10 @@ void run_client()
         total_request_rate += thread_data[i].request_rate;
         total_packets_lost += thread_data[i].packets_lost;
     }
+
     printf("Average RTT: %lld us\n", total_rtt / total_messages);
     printf("Total Request Rate: %f messages/s\n", total_request_rate);
-    printf("Total Packet Loss: %f percent",total_packets_lost);
+    printf("Total Packets Lost: %lld packets\n",total_packets_lost);
 }
 void run_server()
 {
@@ -321,7 +318,7 @@ void run_server()
                 char buffer[MESSAGE_SIZE]; // buffer for the message to be held in
 
                 // receive message into the buffer
-                ssize_t rec = recvfrom(server_fd, buffer, MESSAGE_SIZE, 0, (struct sockaddr*)&client, client_len);
+                ssize_t rec = recvfrom(server_fd, buffer, MESSAGE_SIZE, 0, (struct sockaddr*)&client, &client_len);
 
                 if (rec == -1)
                 {
