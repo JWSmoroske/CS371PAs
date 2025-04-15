@@ -294,7 +294,13 @@ void run_server()
     struct epoll_event event, events[MAX_EVENTS]; // define epoll and events
     struct sockaddr_in channel; // define domain socket 
     socklen_t channel_len = sizeof(channel); // for new socket creation
-    seq_nr frame_expected[DEFAULT_CLIENT_THREADS] = {0}; // expected sequence number tracked for the client id
+    seq_nr *frame_expected = malloc(num_client_threads * sizeof(seq_nr)); // expected sequence number tracked for the client id, dynamically allocated at runtime
+
+    if (frame_expected == NULL)
+    {
+        perror("Memory allocation failed");
+        return;
+    }
 
     // create socket for UDP
     server_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP); 
@@ -411,6 +417,7 @@ void run_server()
     // close fds and return
     close(server_fd);
     close(epoll_fd);
+    free(frame_expected); // free the memory allocated dynamically   
     return;
 }
 
