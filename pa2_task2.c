@@ -285,6 +285,7 @@ void run_server()
     struct epoll_event event, events[MAX_EVENTS]; // define epoll and events
     struct sockaddr_in channel; // define domain socket 
     socklen_t channel_len = sizeof(channel); // for new socket creation
+    seq_nr frame_expected[DEFAULT_CLIENT_THREADS] = {0}; // expected sequence number tracked for the client id
 
     // create socket for UDP
     server_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP); 
@@ -348,14 +349,15 @@ void run_server()
 
          for (int i = 0; i < event_count; i++)
          {
+            // case where a new socket needs to be made for the client
             if (events[i].data.fd == server_fd) 
             {
                 struct sockaddr_in client; // one socket created for the client for UDP
                 socklen_t client_len = sizeof(client); // for the client socket
-                char buffer[MESSAGE_SIZE]; // buffer for the message to be held in
+                frame client_packet, ack_packet; // define packets for client and acknowledgement
 
-                // receive message into the buffer
-                ssize_t rec = recvfrom(server_fd, buffer, MESSAGE_SIZE, 0, (struct sockaddr*)&client, client_len);
+                // receive message into the client packet
+                ssize_t rec = recvfrom(server_fd, &client_packet, sizeof(client_packet), 0, (struct sockaddr*)&client, &client_len);
 
                 if (rec == -1)
                 {
@@ -363,13 +365,32 @@ void run_server()
                     continue;
                 }
 
-                // echo that message from the buffer
-                ssize_t send = sendto(server_fd, buffer, rec, 0, (struct sockaddr*)&client, client_len);
+                int client_thread_id = client_packet.thread_id; // get the clients thread id
+                memset(&ack_packet, 0, sizeof(frame)); // reset the ack packet for a new client packet
+                ack_packet.thread_id = client_thread_id; // set the ack packet thread_id to its client 
+
+                // if the received packet has the expected sequence number for the client id
+                if (client_packet.seq == frame_expected[client_thread_id])
+                {
+                    frame_expected[client_thread_id] = (frame_expected[client_thread_id] + 1) % MAX_SEQ; // increment the sequence number to be the next expected one for the client
+                    ack_packet.type = 1; // ack, since the expected sq num lined up
+                }
+                
+                else
+                {
+                    ack_packet.type = 2;  // nack, since the expected sq num didn't line up 
+                }
+
+                ack_packet.ack = frame_expected[client_thread_id]; // set the next expected sequence number for that client into ack
+
+                // send back the ack packet, not echoing the whole packet back
+                ssize_t send = sendto(server_fd, &ack_packet, sizeof(ack_packet), 0, (struct sockaddr*)&client, client_len);
 
                 if (send == -1)
                 {
-                    perror("Send messsage failed");
+                    perror("Acknowledgement failed to transmit");
                     continue;
+
                 }
             }
         }
