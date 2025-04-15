@@ -41,6 +41,7 @@ Please specify the group members here
 
 #define THREAD_TIMEOUT 1000
 #define MAX_SEQ 1
+#define MAX_THREADS 100
 
 typedef unsigned int seq_nr;
 
@@ -294,14 +295,8 @@ void run_server()
     struct epoll_event event, events[MAX_EVENTS]; // define epoll and events
     struct sockaddr_in channel; // define domain socket 
     socklen_t channel_len = sizeof(channel); // for new socket creation
-    seq_nr *frame_expected = malloc(num_client_threads * sizeof(seq_nr)); // expected sequence number tracked for the client id, dynamically allocated at runtime
-
-    if (frame_expected == NULL)
-    {
-        perror("Memory allocation failed");
-        return;
-    }
-
+    seq_nr frame_expected[MAX_THREADS] = {0}; // expected sequence number tracked for the client id
+    
     // create socket for UDP
     server_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP); 
     if (server_fd == -1)
@@ -381,6 +376,14 @@ void run_server()
                 }
 
                 int client_thread_id = client_packet.thread_id; // get the clients thread id
+
+                // check to see if the client id is in bounds
+                if (client_thread_id < 0 || client_thread_id >= MAX_THREADS) 
+                {
+                    perror("Client thread id is not in the bounds of the threads threshold");
+                    continue;
+                }
+
                 memset(&ack_packet, 0, sizeof(frame)); // reset the ack packet for a new client packet
                 ack_packet.thread_id = client_thread_id; // set the ack packet thread_id to its client 
 
@@ -417,7 +420,6 @@ void run_server()
     // close fds and return
     close(server_fd);
     close(epoll_fd);
-    free(frame_expected); // free the memory allocated dynamically   
     return;
 }
 
