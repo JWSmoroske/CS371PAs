@@ -83,8 +83,7 @@ void *client_thread_func(void *arg)
 {
     client_thread_data_t *data = (client_thread_data_t *)arg;
     struct epoll_event event, events[MAX_EVENTS];
-    char send_buf[MESSAGE_SIZE] = "ABCDEFGHIJKMLNOP"; /* Send 16-Bytes message every time */
-    char recv_buf[MESSAGE_SIZE];
+    char buf[MESSAGE_SIZE] = "ABCDEFGHIJKMLNOP"; /* Send 16-Bytes message every time */
     struct timeval start, end;
 
     socklen_t server_addr_len = sizeof(data->server_addr);
@@ -125,7 +124,7 @@ void *client_thread_func(void *arg)
         f.type = 0;
         f.thread_id = data->thread_id;
         f.seq = next_seqnr_to_send;
-        memcpy(f.data, send_buf, MESSAGE_SIZE);
+        memcpy(f.data, buf, MESSAGE_SIZE);
 
         // send frame to server
         if (sendto(data->socket_fd, &f, sizeof(f), 0, (struct sockaddr*)&data->server_addr, server_addr_len) == -1)
@@ -180,7 +179,7 @@ void *client_thread_func(void *arg)
                         else
                         {
                             next_seqnr_to_send = 0;
-
+                        }
                         acks_received++;
                     }
                 }
